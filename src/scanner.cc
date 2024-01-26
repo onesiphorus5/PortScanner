@@ -1,20 +1,18 @@
 #include "scanner.h"
 #include "packet.h"
 
-const uint32_t BUFF_SIZE = 1 << 16; // 64k bytes
+const uint32_t BUFF_SIZE = 128; // Enough to fit both TCP and IP headers
 
 bool send_SYN( int client_skt, 
-               const struct sockaddr* target, 
+               const struct sockaddr_in* target, 
                const ScanRequest& scan_request ) {
    // Setup IP packet
    IP_packet SYN_packet;
-   if ( setup_packet( scan_request, SYN_packet ) != 0 ) {
-      return false;
-   }
+   setup_packet( target, SYN_packet );
 
    // Send the IP packet to the target
-   if ( sendto( client_skt, SYN_packet.to_cstr(), SYN_packet.size(), 0, 
-                target, sizeof( struct sockaddr ) ) < 0 ) {
+   if ( sendto( client_skt, SYN_packet.buffer(), SYN_packet.size(), 0, 
+                (const struct sockaddr*)target, sizeof( struct sockaddr ) ) < 0 ) {
       return false;
    }
    return true;
@@ -22,17 +20,20 @@ bool send_SYN( int client_skt,
 
 
 bool recv_ACK( int client_skt, const ScanRequest& scan_request ) {
-   struct sockaddr sender_addr;
-   socklen_t addrlen = sizeof( struct sockaddr );
-   PacketBuffer buffer{BUFF_SIZE};
-   if ( recvfrom( client_skt, buffer.ptr(), buffer.size(), 0, 
-                  &sender_addr, &addrlen ) < 0 ) {
+   struct sockaddr saddr;
+   socklen_t addr_len;
+
+   // Receive IP packets
+   char buffer[BUFF_SIZE];
+   ssize_t recvd_bytes;
+   recvd_bytes = recvfrom( client_skt, buffer, BUFF_SIZE, 0, &saddr, &addr_len );
+   if ( recvd_bytes < 0 ) {
       return false;
    }
 
+   // Parse the received IP packet
    IP_packet ACK_packet;
-   if ( parse_packet( buffer, scan_request, ACK_packet ) != 0 ) {
-      return false;
-   }
+   parse_packet( buffer, recvd_bytes, scan_request, ACK_packet );
+
    return true;
 }

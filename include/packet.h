@@ -4,6 +4,12 @@
 #include "cmdline_parser.h"
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
+#include <netinet/ip.h>
+#include <string.h>
+
+// localhost_addr is set in main.cc
+extern struct sockaddr_in localhost_addr;
 
 class PacketBuffer{
 private:
@@ -22,14 +28,34 @@ public:
 
 class IP_packet{
 private:
-   std::string buffer;
+   struct tcphdr _tcp_hdr;
+   struct iphdr  _ip_hdr;
+
+   char* _buffer;
 
 public:
-   const char* to_cstr() { return buffer.c_str(); }
-   ssize_t size() { return buffer.size(); }
+   IP_packet() { _buffer = new char[size()]; }
+   ~IP_packet() { delete[] _buffer; }
+
+   void tcp_hdrIs( const struct tcphdr& hdr ) { 
+      _tcp_hdr = hdr;
+      memcpy( _buffer + sizeof( struct iphdr ), 
+              &_tcp_hdr, sizeof( struct tcphdr ) );
+   }
+   void ip_hdrIs( const struct iphdr& hdr ) { 
+      _ip_hdr = hdr;
+      memcpy( _buffer, &_ip_hdr, sizeof( struct iphdr ) );
+   }
+
+   const struct tcphdr& tcp_hdr() { return _tcp_hdr; }
+   const struct iphdr& ip_hdr() { return _ip_hdr; }
+
+   ssize_t size() { return sizeof( struct tcphdr) + sizeof( struct iphdr ); }
+   
+   const char* buffer() const { return _buffer; }
 };
 
-int setup_packet( const ScanRequest&, IP_packet& );
-int parse_packet( const PacketBuffer&, const ScanRequest&, IP_packet& );
+void setup_packet( const struct sockaddr_in*, IP_packet& );
+void parse_packet( const char*, ssize_t, const ScanRequest&, IP_packet& );
 
 #endif // parket_h
