@@ -36,13 +36,15 @@ void setup_packet( const struct sockaddr_in *target, IP_packet& ip_packet ) {
    ipHeader.frag_off = htons( uint16_t( 1 << 14 ) ); // Don't fragment
    ipHeader.ttl      = 64; // Linux default ttl value
    ipHeader.protocol = IPPROTO_TCP;
-   // ipHeader.check    = compute_checksum();
    ipHeader.check    = 0;
    ipHeader.saddr    = src_addr;
    ipHeader.daddr    = dst_addr;
-
-   ip_packet.tcp_hdrIs( tcpHeader );
+  
+   // Set checksum for both headers
    ip_packet.ip_hdrIs( ipHeader );
+   ip_packet.set_ipHeaderChecksum();
+   ip_packet.tcp_hdrIs( tcpHeader );
+   ip_packet.set_tcpHeaderChecksum();
 }
 
 void parse_packet( const char*, ssize_t, const ScanRequest& scan_request, 

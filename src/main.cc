@@ -80,6 +80,8 @@ const struct sockaddr_in get_localhost_addr() {
       exit( EXIT_FAILURE );
    }
 
+   // TODO: send packets
+
    struct sockaddr saddr;
    socklen_t saddr_len;
    for ( ; ; ) {
