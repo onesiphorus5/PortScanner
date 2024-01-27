@@ -11,21 +11,6 @@
 // localhost_addr is set in main.cc
 extern struct sockaddr_in localhost_addr;
 
-// class PacketBuffer{
-// private:
-//    char* _ptr;
-//    ssize_t _size;
-// 
-// public:
-//    PacketBuffer( ssize_t size ) : _size{size} {
-//       _ptr = new char[size];
-//    }
-//    ~PacketBuffer() { delete[] _ptr; }
-// 
-//    char* ptr() { return _ptr; }
-//    ssize_t size() { return _size; }
-// };
-
 class IP_packet{
 private:
    // Useful for checksum computation
