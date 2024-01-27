@@ -6,15 +6,21 @@
 
 class ScanRequest {
 private:
-   std::string _host;
-   std::string _port;
-
+   uint64_t _addr_port;
 public:
-   ScanRequest( const std::string& h, const std::string& p ) :
-      _host{h}, _port{p} {}
+   ScanRequest( uint64_t addr_port ) : _addr_port{ addr_port } {}
 
-   const std::string& host() const { return _host; }
-   const std::string& port() const { return _port; }
+   uint64_t addr_port() { return _addr_port; }
+
+   uint32_t addr() const {
+      uint32_t _addr = (uint32_t) ( _addr_port >> 16 ) ;
+      return _addr; 
+   }
+
+   uint16_t port() const { 
+      uint16_t _port = (uint16_t) _addr_port;
+      return _port;
+   }
 };
 
 class CmdLineOptions {
@@ -24,8 +30,8 @@ private:
 public:
    const std::vector<ScanRequest>& scan_requests() const { return _scan_requests; }
 
-   void add_request( const std::string& host, const std::string& port ) {
-      _scan_requests.emplace_back( host, port );
+   void add_request( uint64_t addr_port ) {
+      _scan_requests.emplace_back( addr_port );
    }
 };
 

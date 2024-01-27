@@ -30,7 +30,7 @@ int main( int argc, const char* argv[] ) {
    srand( time( nullptr ) );
 
    // Spawn a thread that will snoop incoming IP packets
-   // look for the ACKnowledgement packet
+   // looking for the ACKnowledgement packet
    std::jthread snoop_thread( snoop_network );
 
    // Set localhost_addr
@@ -45,18 +45,17 @@ int main( int argc, const char* argv[] ) {
       exit( EXIT_FAILURE );
    }
 
-   // TODO: change scan_request to be simply a uint64_t
-   std::unordered_map<std::string, struct sockaddr_in> addresses; // TCP-IP
-   std::vector<ScanRequest> open_ports;
    for ( const ScanRequest& request : options.scan_requests() ) {
-      std::string host_port = request.host() + "-" + request.port();
-      if ( !addresses.contains( host_port ) ) {
-         addresses[host_port] = make_addr( request );
-      }
-      const struct sockaddr_in target_addr = addresses[host_port];
-
+      scan_requests_mutex.lock();
+      scan_requests[ request.addr_port() ] = true;
+      scan_requests_mutex.unlock();
  
-      // Send IP packet with SYN set 
+      // Send IP packet with SYN set
+      struct sockaddr_in target_addr;
+      target_addr.sin_family = AF_INET;
+      target_addr.sin_addr = request.addr;
+      target_addr.sin_port = request.port;
+
       bool SYN_sent = send_SYN( skt, &target_addr );
       if ( SYN_sent == false ) {
          continue;
@@ -72,15 +71,6 @@ int main( int argc, const char* argv[] ) {
    // }
 
    return 0;
-}
-
-const struct sockaddr_in make_addr( const ScanRequest& scan_request ) {
-   struct sockaddr_in addr;
-   addr.sin_family = AF_INET;
-   addr.sin_addr.s_addr = inet_addr( scan_request.host().c_str() );
-   addr.sin_port = *(uint16_t*)scan_request.port().c_str();
-
-   return addr;
 }
 
 const struct sockaddr_in get_localhost_addr() {
@@ -114,12 +104,6 @@ const struct sockaddr_in get_localhost_addr() {
 
    return local_addr;
 }
-
-// std::unordered_map<uint64_t, bool> open_ports;
-// std::mutex open_ports_mutex
-// std::unordered_map<uint64_t, bool> scan_requests; // addr + port
-// std::mutex scan_requests_mutex;
-
 
 void snoop_network() {
    int raw_skt = socket( AF_INET, SOCK_RAW, IPPROTO_TCP );
