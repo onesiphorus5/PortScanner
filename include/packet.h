@@ -13,22 +13,6 @@ extern struct sockaddr_in localhost_addr;
 
 class IP_packet{
 private:
-   // Useful for checksum computation
-   struct TCP_pseudoHdr{
-      uint32_t src_addr;
-      uint32_t dst_addr;
-      uint8_t  zero;
-      uint8_t  ptcl; // protocol
-      uint16_t tcp_len;
-      tcphdr tcp_header;
-
-      ssize_t size() {
-         return sizeof( src_addr ) + sizeof( dst_addr ) +
-                sizeof( zero ) + sizeof( ptcl ) + sizeof( tcp_len ) +
-                sizeof ( tcp_header );
-      }
-   };
-
    struct tcphdr _tcp_hdr;
    struct iphdr  _ip_hdr;
    char* _buffer;
@@ -36,21 +20,17 @@ private:
    // helper function
    uint16_t compute_checksum( const char* header, ssize_t hdr_size ) {
       uint32_t sum = 0;
-      ssize_t hdr_size_16bit = hdr_size/2;
+      ssize_t hdr_size_16bit = hdr_size >> 2;
       uint16_t* header_16bit = (uint16_t*)header;
       for ( int i=0; i < hdr_size_16bit; ++i ) {
          sum += *( header_16bit + i );
-         // Check if there is a carry over bit
-         if ( sum >> 16 ) {
-            sum = sum << 16;
-            sum = sum >> 16;
-            sum += 1;
-         }
       }
-   
-      uint16_t checksum = (uint16_t) sum;
-      checksum = ~checksum;
-      return checksum;
+      // In case there is a carry over
+      while( sum >> 16 ) {
+         sum = (uint16_t)sum + (sum >> 16 );
+      }
+
+      return (uint16_t) ( ~sum );
    }
 
 public:
@@ -68,27 +48,31 @@ public:
       _ip_hdr.check = compute_checksum( (const char*)&_ip_hdr, 
                                          sizeof( struct iphdr ) );
    }
+
    void set_tcpHeaderChecksum() {
-      TCP_pseudoHdr tcp_pseudoHeader;
+      uint32_t checksum = 0;
 
-      tcp_pseudoHeader.src_addr = _ip_hdr.saddr;
-      tcp_pseudoHeader.dst_addr = _ip_hdr.daddr;
-      tcp_pseudoHeader.zero = 0;
-      tcp_pseudoHeader.ptcl = IPPROTO_TCP;
-      tcp_pseudoHeader.tcp_len = sizeof( struct tcphdr );
-      tcp_pseudoHeader.tcp_header = _tcp_hdr;
+      // TCP pseudo header checksum
+      checksum += ( _ip_hdr.saddr >> 16 ) + (uint16_t)_ip_hdr.saddr;
+      checksum += ( _ip_hdr.daddr >> 16 ) + (uint16_t)_ip_hdr.daddr;
+      checksum += htons( (uint16_t) IPPROTO_TP );
+      checksum += htons( sizeof( struct tcphdr ) );
 
-      ssize_t header_size = sizeof( tcp_pseudoHeader );
-      // Adding padding if necessary
-      if ( header_size % 2 == 1 ) {
-         header_size += 1;
+      // TCP header checksum
+      ssize_t tcp_hdr_size    = sizeof( struct tcphdr );
+      uint16_t* tcp_hdr_16bit = (uint16_t*)&_tcp_hdr;
+      for ( int i=0; i < ( tcp_hdr_size >> 2 ); ++i ) {
+         checksum += *( tcp_hdr_16bit + i );
       }
-      char buffer[header_size];
-      memset( buffer, 0, header_size );
-      memcpy( buffer, &tcp_pseudoHeader, tcp_pseudoHeader.size() );
+      // In case there is a carry over
+      while ( checksum >> 16 ) {
+         checksum = (uint16_t)checksum + (checksum >> 16);
+      }
 
-      _tcp_hdr.check = compute_checksum( (const char*)buffer, header_size );
+      _tcp_hdr.check = (uint16_t)(~checksum);
    }
+
+   uint16_t tcp_checksum() { return _tcp_hdr.check; }
 
    const struct tcphdr& tcp_hdr() { return _tcp_hdr; }
    const struct iphdr& ip_hdr() { return _ip_hdr; }

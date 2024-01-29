@@ -22,11 +22,11 @@ CmdLineOptions cmdline_parse( int argc, const char* argv[] ) {
    port_d = htons( port_d );
 
    uint64_t addr_port = addr;
-   addr_port = addr_port << 32;
+   addr_port = addr_port << 16;
    addr_port = addr_port | port_d;
 
    CmdLineOptions options;
-   options.add_request( host, port );
+   options.add_request( addr_port );
 
    return options;
 }

@@ -45,6 +45,7 @@ void setup_packet( const struct sockaddr_in *target, IP_packet& ip_packet ) {
    ip_packet.set_ipHeaderChecksum();
    ip_packet.tcp_hdrIs( tcpHeader );
    ip_packet.set_tcpHeaderChecksum();
+   std::cout << "TCP checksum: " << ip_packet.tcp_checksum() << std::endl;
 }
 
 void parse_packet( const char*, ssize_t, const ScanRequest& scan_request, 

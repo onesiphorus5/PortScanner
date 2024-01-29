@@ -1,6 +1,9 @@
 #ifndef cmdline_parser_h
 #define cmdline_parser_h
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <iostream>
 #include <vector>
 
@@ -10,7 +13,7 @@ private:
 public:
    ScanRequest( uint64_t addr_port ) : _addr_port{ addr_port } {}
 
-   uint64_t addr_port() { return _addr_port; }
+   uint64_t addr_port() const { return _addr_port; }
 
    uint32_t addr() const {
       uint32_t _addr = (uint32_t) ( _addr_port >> 16 ) ;
