@@ -18,7 +18,7 @@
 struct sockaddr_in localhost_addr;
 
 const struct sockaddr_in make_addr( const ScanRequest& );
-const struct sockaddr_in get_localhost_addr();
+// const struct sockaddr_in get_localhost_addr();
 
 /* Related to the snooping thread*/
 std::unordered_map<uint64_t, bool> open_ports;
@@ -32,9 +32,9 @@ int main( int argc, const char* argv[] ) {
    srand( time( nullptr ) );
 
    // Set localhost_addr
-   std::cout << "[before] get_localhost_addr()" << std::endl;
-   localhost_addr = get_localhost_addr();
-   std::cout << "[after] get_localhost_addr()" << std::endl;
+   // std::cout << "[before] get_localhost_addr()" << std::endl;
+   // localhost_addr = get_localhost_addr();
+   // std::cout << "[after] get_localhost_addr()" << std::endl;
 
    // Spawn a thread that will snoop incoming IP packets
    // looking for the ACKnowledgement packet
@@ -51,7 +51,7 @@ int main( int argc, const char* argv[] ) {
    }
    // Set the IP_HDRINCL option so we can write our own IP header
    int on = 1;
-   // setsockopt(skt, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
+   setsockopt(skt, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
 
    for ( const ScanRequest& request : options.scan_requests() ) {
       // Send IP packet with SYN set
@@ -95,6 +95,7 @@ int main( int argc, const char* argv[] ) {
    return 0;
 }
 
+/*
 const struct sockaddr_in get_localhost_addr() {
    // We need to sniff any IP packet, so ping replies are enough.
    if ( fork() == 0 ) {
@@ -126,7 +127,7 @@ const struct sockaddr_in get_localhost_addr() {
 
    return local_addr;
 }
-
+*/
 void snoop_network( std::stop_token stopToken ) {
    int raw_skt = socket( AF_INET, SOCK_RAW, IPPROTO_TCP );
    if ( raw_skt < 0 ) {
