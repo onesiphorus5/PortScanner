@@ -1,12 +1,14 @@
 #ifndef parket_h
 #define parket_h
 
-#include "cmdline_parser.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <string.h>
+#include <stdlib.h>
+
+#include <iostream>
 
 // localhost_addr is set in main.cc
 extern struct sockaddr_in localhost_addr;
