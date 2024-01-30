@@ -31,7 +31,7 @@ private:
    char* _buffer;
 
    // helper function
-   uint16_t cksum16( const uint16_t*, ssize_t, uint16_t ) const;
+   uint16_t cksum16( const uint16_t*, ssize_t, uint32_t ) const;
   
 public:
    IP_packet() { 

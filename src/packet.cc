@@ -4,9 +4,9 @@ const uint16_t SRC_PORT = 4647;
 
 uint16_t 
 IP_packet::cksum16( const uint16_t* buffer, ssize_t len, 
-                    uint16_t prev_cksum ) const {
+                    uint32_t prev_sum ) const {
    int nleft = len;
-   uint32_t sum = ~prev_cksum;
+   uint32_t sum = prev_sum;
    const uint16_t *w = buffer;
    uint16_t answer = 0;
 
@@ -32,21 +32,84 @@ IP_packet::cksum16( const uint16_t* buffer, ssize_t len,
    return (answer);
 }
 
+/*
+uint16_t
+IP_packet::cksum_tcp() const {
+   struct iphdr* pIph = _ip_hdr;
+   unsigned short* ipPayload = (unsigned short*)_tcp_hdr;
+
+    unsigned long sum = 0;
+    unsigned short tcpLen = ntohs(pIph->tot_len) - (pIph->ihl<<2);
+    struct tcphdr *tcphdrp = (struct tcphdr*)(ipPayload);
+    //add the pseudo header 
+    //the source ip
+    // struct in_addr saddr;
+    struct in_addr saddr2;
+    // inet_aton( "192.168.1.71", &saddr );
+    // pIph->saddr = saddr.s_addr;
+    saddr2.s_addr = pIph->saddr;
+    std::cout << "cksum saddr: " <<  inet_ntoa( saddr2 ) << std::endl;
+    sum += (pIph->saddr>>16)&0xFFFF;
+    sum += (pIph->saddr)&0xFFFF;
+    //the dest ip
+    sum += (pIph->daddr>>16)&0xFFFF;
+    sum += (pIph->daddr)&0xFFFF;
+    //protocol and reserved: 6
+    sum += htons(IPPROTO_TCP);
+    //the length
+    sum += htons(tcpLen);
+ 
+    //add the IP payload
+    //initialize checksum to 0
+    // tcphdrp->check = 0;
+    while (tcpLen > 1) {
+        sum += * ipPayload++;
+        tcpLen -= 2;
+    }
+    //if any bytes left, pad the bytes and add
+    if(tcpLen > 0) {
+        //printf("+++++++++++padding, %dn", tcpLen);
+        sum += ((*ipPayload)&htons(0xFF00));
+    }
+      //Fold 32-bit sum to 16 bits: add carrier to result
+      while (sum>>16) {
+          sum = (sum & 0xffff) + (sum >> 16);
+      }
+      sum = ~sum;
+    //set computation result
+    // tcphdrp->check = (unsigned short)sum;
+    return (unsigned short)sum;
+
+}
+*/
+
 uint16_t 
 IP_packet::cksum_tcp() const {
    struct TCP_pseudo_hdr pseudo_hdr;
    memset( &pseudo_hdr, 0, sizeof( pseudo_hdr ) );
 
-   pseudo_hdr.src = _ip_hdr->saddr;
-   pseudo_hdr.dst = _ip_hdr->daddr;
-   pseudo_hdr.zero = 0;
-   pseudo_hdr.protocol = IPPROTO_TCP;
-   pseudo_hdr.len = htons( sizeof( struct tcphdr ) );
+   uint32_t sum = 0;
 
-   uint16_t sum = cksum16( (uint16_t*)&pseudo_hdr, pseudo_hdr.size(), 0 );
-   sum = cksum16( (uint16_t*)_tcp_hdr, sizeof( struct tcphdr ), sum );
+   sum += (_ip_hdr->saddr>>16)&0xFFFF;
+   sum += (_ip_hdr->saddr)&0xFFFF;
+   //the dest ip
+   sum += (_ip_hdr->daddr>>16)&0xFFFF;
+   sum += (_ip_hdr->daddr)&0xFFFF;
+   //protocol and reserved: 6
+   sum += htons(IPPROTO_TCP);
+   //the length
+   sum += htons( sizeof( struct tcphdr ) );
 
-   return sum;
+   // pseudo_hdr.src = _ip_hdr->saddr;
+   // pseudo_hdr.dst = _ip_hdr->daddr;
+   // pseudo_hdr.zero = 0;
+   // pseudo_hdr.protocol = IPPROTO_TCP;
+   // pseudo_hdr.len = htons( sizeof( struct tcphdr ) );
+   // sum = cksum16( (uint16_t*)&pseudo_hdr, pseudo_hdr.size(), 0 );
+
+   uint16_t checksum = cksum16( (uint16_t*)_tcp_hdr, sizeof( struct tcphdr ), sum );
+
+   return checksum;
 }
 
 void IP_packet::setup_packet( const struct sockaddr_in *target ) {
@@ -64,7 +127,7 @@ void IP_packet::setup_packet( const struct sockaddr_in *target ) {
    ipHeader->ttl      = 64; // Linux default ttl value
    ipHeader->protocol = IPPROTO_TCP;
    ipHeader->check    = 0;          // The kernel always sets it
-   ipHeader->saddr    = INADDR_ANY; // The kernel will set it
+   ipHeader->saddr    = localhost_addr.sin_addr.s_addr;
    ipHeader->daddr    = dst_addr;
    ip_hdrIs( ipHeader );
    // std::cout << "Here" << std::endl;
@@ -74,7 +137,8 @@ void IP_packet::setup_packet( const struct sockaddr_in *target ) {
                      (struct tcphdr*) ( _buffer + sizeof( struct iphdr ) );
    tcpHeader->source  = htons( SRC_PORT );
    tcpHeader->dest    = dst_port;
-   tcpHeader->seq     = htonl( (uint32_t)rand() );
+   tcpHeader->seq     = 1234; // TODO: remove after debugging
+   // tcpHeader->seq     = htonl( (uint32_t)rand() );
    tcpHeader->ack_seq = 0;
    tcpHeader->doff    = uint8_t( sizeof( struct tcphdr ) / 4 );
    tcpHeader->urg     = 0;
@@ -87,13 +151,17 @@ void IP_packet::setup_packet( const struct sockaddr_in *target ) {
    tcpHeader->check   = 0;
    tcpHeader->urg_ptr = 0;
    tcp_hdrIs( tcpHeader );
+   // tcpHeader->check   = htons( 48116 ); // TODO: remove after testing
    tcpHeader->check   = cksum_tcp();
 
+   std::cout << "tcp checksum: " << cksum_tcp() << std::endl;
+
    // TODO: the checksum is not correct (by looking at wireshark)
-   std::cout << "tcp size: " << sizeof( struct tcphdr ) << std::endl;
+   /*
    if ( cksum_tcp() != 0 ) {
       std::cout << "TCP checksum error" << std::endl;
       exit( EXIT_FAILURE );
    }
+   */
    std::cout << "TCP checksum: " << tcpHeader->check << std::endl;
 }

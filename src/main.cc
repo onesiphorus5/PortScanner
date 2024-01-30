@@ -18,7 +18,7 @@
 struct sockaddr_in localhost_addr;
 
 const struct sockaddr_in make_addr( const ScanRequest& );
-// const struct sockaddr_in get_localhost_addr();
+const struct sockaddr_in get_localhost_addr();
 
 /* Related to the snooping thread*/
 std::unordered_map<uint64_t, bool> open_ports;
@@ -32,14 +32,11 @@ int main( int argc, const char* argv[] ) {
    srand( time( nullptr ) );
 
    // Set localhost_addr
-   // std::cout << "[before] get_localhost_addr()" << std::endl;
-   // localhost_addr = get_localhost_addr();
-   // std::cout << "[after] get_localhost_addr()" << std::endl;
+   localhost_addr = get_localhost_addr();
 
    // Spawn a thread that will snoop incoming IP packets
    // looking for the ACKnowledgement packet
    std::jthread snooping_thread( snoop_network );
-
 
    CmdLineOptions options = cmdline_parse( argc, argv );
    
@@ -70,7 +67,7 @@ int main( int argc, const char* argv[] ) {
    }
    close( skt );
 
-   int timeout = 50000; // 50 secs
+   int timeout = 5000; // 5 secs
    std::this_thread::sleep_for( std::chrono::milliseconds( timeout ) );
 
    // Print open ports
@@ -84,7 +81,7 @@ int main( int argc, const char* argv[] ) {
       snooped_addr.s_addr = (uint32_t) addr_port;
 
       std::cout << " Port: " << snooped_port << " on host: "
-                << inet_ntoa( snooped_addr ) << "is open" << std::endl;
+                << inet_ntoa( snooped_addr ) << " is open" << std::endl;
    }
    open_ports_mutex.unlock();
 
@@ -95,7 +92,6 @@ int main( int argc, const char* argv[] ) {
    return 0;
 }
 
-/*
 const struct sockaddr_in get_localhost_addr() {
    // We need to sniff any IP packet, so ping replies are enough.
    if ( fork() == 0 ) {
@@ -127,7 +123,7 @@ const struct sockaddr_in get_localhost_addr() {
 
    return local_addr;
 }
-*/
+
 void snoop_network( std::stop_token stopToken ) {
    int raw_skt = socket( AF_INET, SOCK_RAW, IPPROTO_TCP );
    if ( raw_skt < 0 ) {
