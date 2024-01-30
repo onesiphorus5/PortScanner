@@ -8,7 +8,7 @@
 #include <mutex>
 #include <thread>
 
-/* Related to the snooping thread*/
+/* Defined in main.cc */
 extern std::unordered_map<uint64_t, bool> open_ports;
 extern  std::mutex open_ports_mutex;
 extern std::unordered_map<uint64_t, bool> pending_requests; // addr + port

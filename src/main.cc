@@ -7,7 +7,6 @@
 
 struct sockaddr_in localhost_addr;
 
-/* Related to the snooping thread*/
 std::unordered_map<uint64_t, bool> open_ports;
 std::mutex open_ports_mutex;
 std::unordered_map<uint64_t, bool> pending_requests; // addr + port
@@ -57,19 +56,27 @@ int main( int argc, const char* argv[] ) {
    std::this_thread::sleep_for( std::chrono::milliseconds( timeout ) );
 
    // Print open ports
+   pending_requests_mutex.lock();
    open_ports_mutex.lock();
    struct in_addr snooped_addr;
    uint16_t snooped_port;
-   for ( const auto& [ key, _] : open_ports ) {
-      uint64_t addr_port = key;
-      snooped_port = (uint16_t) addr_port;
-      addr_port = addr_port >> 16;
-      snooped_addr.s_addr = (uint32_t) addr_port;
+   for ( const auto& [ key, _] : pending_requests ) {
+      if ( open_ports.contains( key ) ) {
+         uint64_t addr_port = key;
+         snooped_port = (uint16_t) addr_port;
+         addr_port = addr_port >> 16;
+         snooped_addr.s_addr = (uint32_t) addr_port;
+   
+         std::cout << " Port: " << ntohs( snooped_port ) << " on host: "
+                   << inet_ntoa( snooped_addr ) << " is OPEN" << std::endl;
+      } else {
+         std::cout << " Port: " << ntohs( snooped_port ) << " on host: "
+                   << inet_ntoa( snooped_addr ) << " is NOT OPEN" << std::endl;
 
-      std::cout << " Port: " << ntohs( snooped_port ) << " on host: "
-                << inet_ntoa( snooped_addr ) << " is open" << std::endl;
+      }
    }
    open_ports_mutex.unlock();
+   pending_requests_mutex.unlock();
 
    // Stop the snooping thread
    snooping_thread.request_stop();

@@ -87,7 +87,7 @@ void snoop_network( std::stop_token stopToken ) {
 
       // Check if it's one of the packets we are expecting.
       pending_requests_mutex.lock();
-      if ( pending_requests.count( addr_port ) && 
+      if ( pending_requests.contains( addr_port ) && 
            ( tcp_header->syn == 1 ) && 
            ( tcp_header->ack == 1 ) ) {
          open_ports_mutex.lock();
