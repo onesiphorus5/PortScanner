@@ -80,7 +80,7 @@ int main( int argc, const char* argv[] ) {
       addr_port = addr_port >> 16;
       snooped_addr.s_addr = (uint32_t) addr_port;
 
-      std::cout << " Port: " << snooped_port << " on host: "
+      std::cout << " Port: " << ntohs( snooped_port ) << " on host: "
                 << inet_ntoa( snooped_addr ) << " is open" << std::endl;
    }
    open_ports_mutex.unlock();
@@ -160,28 +160,24 @@ void snoop_network( std::stop_token stopToken ) {
       addr_port = addr_port << 16;
       addr_port = addr_port | target_port;
 
-      // For debugging
-      struct in_addr saddr;
-      saddr.s_addr = ntohl( target_addr );
-      std::cout << "target addr: " << inet_ntoa( saddr ) << std::endl;
-      std::cout << "target port: " << ntohs( target_port ) << std::endl;
-      // For debugging -- end
-
+      // Check if it's one of the packets we are expecting.
       pending_requests_mutex.lock();
-      if ( pending_requests.count( addr_port ) ) {
+      if ( pending_requests.count( addr_port ) && 
+           ( tcp_header->syn == 1 ) && 
+           ( tcp_header->ack == 1 ) ) {
          open_ports_mutex.lock();
          open_ports[ addr_port ] = true;
          open_ports_mutex.unlock();
       }
+      pending_requests_mutex.unlock();
 
+      // If we've received all the packets we were expecting, end the loop.
       open_ports_mutex.lock();
       if ( open_ports.size() == pending_requests.size() ) {
          open_ports_mutex.unlock();
-         pending_requests_mutex.unlock();     
          break;
       }
       open_ports_mutex.unlock();
-      pending_requests_mutex.unlock();
    }
 
    close( raw_skt );

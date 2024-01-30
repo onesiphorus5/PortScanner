@@ -43,9 +43,6 @@ public:
    void tcp_hdrIs( struct tcphdr* hdr ) { _tcp_hdr = hdr; }
    void ip_hdrIs( struct iphdr* hdr ) { _ip_hdr = hdr; }
 
-   // void set_ipHeaderChecksum() { _ip_hdr.check = htons ( compute_checksum_ip() ); }
-   // void set_tcpHeaderChecksum() { _tcp_hdr.check = htons( compute_checksum_tcp() ); }
-
    const struct tcphdr* tcp_hdr() { return _tcp_hdr; }
    const struct iphdr* ip_hdr() { return _ip_hdr; }
 
