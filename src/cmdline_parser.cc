@@ -6,27 +6,41 @@ CmdLineOptions cmdline_parse( int argc, const char* argv[] ) {
       std::cout << "Expecting at least 2 cmd line arguments" << std::endl;
       exit( EXIT_FAILURE );
    }
-   std::string host = argv[1];
-   std::string port = argv[2];
-   
+
+   CmdLineOptions options;
+   std::string host;
+   std::string timeout;
+   std::string parallel;
+
+   std::vector<std::string_view> args( argv + 1, argv + argc );
+   for ( auto arg : args ) {
+      if ( arg.starts_with( "--host" ) ) {
+         host = arg.substr( sizeof( "--host" ), arg.size() );
+      }
+      else if ( arg.starts_with( "--timeout" ) ) {
+         std::string_view timeout = arg.substr( sizeof( "--timeout" ), arg.size() );
+         options.timeoutIs( std::stoi( timeout.data() ) );
+      }
+      else if ( arg.starts_with( "--parallel" ) ) {
+         std::string_view parallel = arg.substr( sizeof( "--parallel" ), arg.size() );
+         options.parallelIs( std::stoi( parallel.data() ) );
+         // At max 8 ports should be scanned in parallel
+         if ( options.parallel() > 8 ) {
+            options.parallelIs( 8 );
+         }
+      }
+      else {
+         std::cout << "Option " << arg << " not supported" << std::endl;
+         exit( EXIT_FAILURE );
+      }    
+   }
+   // TODO: host needs to be parsed further
    if ( host == "localhost" ) {
       host = "127.0.0.1";
    }
+   options.add_host( inet_addr( host.c_str() ) );
 
-   uint32_t addr = inet_addr( host.c_str() );
-   if ( addr == -1 ) {
-      std::cout << "Invalid host: " << host << std::endl;
-      exit( EXIT_FAILURE );
-   }
-   uint16_t port_d = (uint16_t) stoi( port ); // port in digit
-   port_d = htons( port_d );
-
-   uint64_t addr_port = addr;
-   addr_port = addr_port << 16;
-   addr_port = addr_port | port_d;
-
-   CmdLineOptions options;
-   options.add_request( addr_port );
+   // exit( EXIT_FAILURE );
 
    return options;
 }

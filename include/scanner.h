@@ -2,19 +2,23 @@
 #define scanner_h
 
 #include <netinet/in.h>
-#include <stop_token>
 
+#include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 
 /* Defined in main.cc */
-extern std::unordered_map<uint64_t, bool> open_ports;
+extern std::unordered_set<uint32_t> pending_requests; // hosts
+extern std::unordered_map<uint32_t, std::unordered_set<uint16_t>> open_ports;
 extern  std::mutex open_ports_mutex;
-extern std::unordered_map<uint64_t, bool> pending_requests; // addr + port
-extern std::mutex pending_requests_mutex;
 
-bool send_SYN( int, const struct sockaddr_in* );
+/* Defined in main.cc*/
+extern const uint16_t MAX_PORT_COUNT;
+
+void send_SYN_packets( uint32_t, uint16_t, uint16_t );
 const struct sockaddr_in get_localhost_addr();
 void snoop_network( std::stop_token );
 

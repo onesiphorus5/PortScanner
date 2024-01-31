@@ -5,82 +5,68 @@
 #include <stop_token>
 #include <chrono>
 
+const uint16_t MAX_PORT_COUNT = (1 << 16 ) - 1;
+
 struct sockaddr_in localhost_addr;
 
-std::unordered_map<uint64_t, bool> open_ports;
+std::unordered_set<uint32_t> pending_requests;
+std::unordered_map<uint32_t, std::unordered_set<uint16_t>> open_ports;
 std::mutex open_ports_mutex;
-std::unordered_map<uint64_t, bool> pending_requests; // addr + port
-std::mutex pending_requests_mutex;
+
+// helper function
+uint64_t addr_port( uint32_t, uint16_t );
 
 int main( int argc, const char* argv[] ) {
    // Seed random number generator
    srand( time( nullptr ) );
+
+   // Parse command line arguments
+   CmdLineOptions options = cmdline_parse( argc, argv );
+   pending_requests = options.hosts();
+
+   uint16_t batch_size = 1 << 12;
 
    // Set localhost_addr
    localhost_addr = get_localhost_addr();
 
    // Spawn a thread that will snoop incoming IP packets
    // looking for the ACKnowledgement packet
-   std::jthread snooping_thread( snoop_network );
-
-   CmdLineOptions options = cmdline_parse( argc, argv );
-   
-   // Create TCP raw sockets
-   int skt = socket( AF_INET, SOCK_RAW, IPPROTO_TCP );
-   if ( skt < 0 ) {
-      perror( "socket()" );
-      exit( EXIT_FAILURE );
+   std::vector<std::jthread> snooping_threads;
+   for ( int i=0; i<options.parallel(); ++i ) {
+      snooping_threads.emplace_back( snoop_network );
    }
-   // Set the IP_HDRINCL option so we can write our own IP header
-   int on = 1;
-   setsockopt(skt, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
 
-   for ( const ScanRequest& request : options.scan_requests() ) {
-      // Send IP packet with SYN set
-      struct sockaddr_in target_addr;
-      target_addr.sin_family = AF_INET;
-      target_addr.sin_addr.s_addr = request.addr();
-      target_addr.sin_port = request.port();
-
-      bool SYN_sent = send_SYN( skt, &target_addr );
-      if ( SYN_sent == false ) {
-         continue;
+   // Send SYN packets
+   // TODO: send SYN packets in parallel
+   for ( uint32_t host : options.hosts() ) {
+      std::vector<std::jthread> sending_threads;
+      for ( int i=1; i < MAX_PORT_COUNT; i += batch_size ) {
+         sending_threads.emplace_back( send_SYN_packets, host, i, batch_size );
       }
-      pending_requests_mutex.lock();
-      pending_requests[ request.addr_port() ] = true;
-      pending_requests_mutex.unlock();
-   }
-   close( skt );
 
-   int timeout = 5000; // 5 secs
-   std::this_thread::sleep_for( std::chrono::milliseconds( timeout ) );
+      for ( auto& th : sending_threads ) {
+         th.join();
+      }
+   }
+
+   // Give the snooping threads more time to read the replies
+   auto timeout = std::chrono::milliseconds( options.timeout() * 1000 );
+   std::this_thread::sleep_for( timeout ); 
+
+   for ( auto& thd : snooping_threads ) {
+      thd.request_stop();
+      thd.join();
+   }
 
    // Print open ports
-   pending_requests_mutex.lock();
-   open_ports_mutex.lock();
-   struct in_addr snooped_addr;
-   uint16_t snooped_port;
-   for ( const auto& [ key, _] : pending_requests ) {
-      if ( open_ports.contains( key ) ) {
-         uint64_t addr_port = key;
-         snooped_port = (uint16_t) addr_port;
-         addr_port = addr_port >> 16;
-         snooped_addr.s_addr = (uint32_t) addr_port;
-   
-         std::cout << " Port: " << ntohs( snooped_port ) << " on host: "
-                   << inet_ntoa( snooped_addr ) << " is OPEN" << std::endl;
-      } else {
-         std::cout << " Port: " << ntohs( snooped_port ) << " on host: "
-                   << inet_ntoa( snooped_addr ) << " is NOT OPEN" << std::endl;
-
+   struct in_addr saddr;
+   for ( const auto&[ _addr, _ports] : open_ports ) {
+      for ( uint16_t _port : _ports ) {
+         saddr.s_addr = _addr;
+         std::cout << " Port: " << ntohs( _port ) << " on host: " 
+                   << inet_ntoa( saddr ) << " is OPEN" << std::endl;
       }
    }
-   open_ports_mutex.unlock();
-   pending_requests_mutex.unlock();
-
-   // Stop the snooping thread
-   snooping_thread.request_stop();
-   snooping_thread.join();
 
    return 0;
 }
