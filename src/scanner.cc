@@ -89,10 +89,46 @@ void send_SYN_packets( uint32_t target_addr, uint16_t start_port,
 }
 
 void snoop_network( std::stop_token stopToken ) {
-   int raw_skt = socket( AF_INET, SOCK_RAW, IPPROTO_TCP );
-   if ( raw_skt < 0 ) {
-      perror( "socket()" );
+   int epollfd;
+   const uint16_t MAX_EVENTS = SOCKET_COUNT;
+   struct epoll_event ev, events[ MAX_EVENTS ];
+
+   if ( ( epollfd = epoll_create1( 0 ) ) == -1 ) {
+      perror( "epoll_create1()" );
       exit( EXIT_FAILURE );
+   }
+   ev.events = EPOLLIN;
+   
+   std::vector<int> raw_skts;
+   int on = 1;
+   for ( int i=0; i < SOCKET_COUNT; ++i ) {
+      int skt = socket( AF_INET, SOCK_RAW, IPPROTO_TCP );
+      if ( skt < 0 ) {
+         perror( "socket()" );
+         exit( EXIT_FAILURE ); 
+      }
+      // Set the socket file descriptor to non-blocking
+      int flags = fcntl( skt, F_GETFL, 0 );
+      if ( flags == -1 ) {
+         perror( "fcntl()" );
+         exit( EXIT_FAILURE );
+      }
+      flags |= O_NONBLOCK;
+      if ( fcntl( skt, F_SETFL, flags ) == -1 ) {
+         perror( "fcntl()" );
+         exit( EXIT_FAILURE );
+      }
+
+      // Set the IP_HDRINCL option so we can write our own IP header
+      setsockopt(skt, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
+      raw_skts.push_back( skt );
+
+      // Add the skt to the monitored list
+      ev.data.fd = skt;
+      if ( epoll_ctl( epollfd, EPOLL_CTL_ADD, skt, &ev ) == -1 ) {
+         perror( "epoll_ctl()" );
+         exit( EXIT_FAILURE );
+      }
    }
 
    ssize_t recvd_bytes;
@@ -105,26 +141,38 @@ void snoop_network( std::stop_token stopToken ) {
    struct iphdr* ip_header;
    struct tcphdr* tcp_header;
    while ( !stopToken.stop_requested() ) {
-      memset( buffer, 0, buffersize );
-      if ( recvfrom( raw_skt, buffer, buffersize, 0, &src_addr, &addrlen ) < 0 ) {
-         perror( "recvfrom()" );
+      int fd_count = epoll_wait( epollfd, events, MAX_EVENTS, -1 );
+      if ( fd_count == -1 ) {
+         perror( "epoll_wait()" );
          exit( EXIT_FAILURE );
       }
+      for ( int i=0; i < fd_count; ++i ) {
+         int ready_skt = events[i].data.fd;
 
-      ip_header = (struct iphdr*)buffer;
-      tcp_header = (struct tcphdr*)( buffer + sizeof( struct iphdr ) );
-
-      // Check if it's one of the packets we are expecting.
-      if ( pending_requests.contains( ip_header->saddr ) && 
-           ( tcp_header->syn == 1 ) && 
-           ( tcp_header->ack == 1 ) ) {
-         open_ports_mutex.lock();
-         open_ports[ ip_header->saddr ].insert( tcp_header->source );
-         open_ports_mutex.unlock();
+         memset( buffer, 0, buffersize );
+         if ( recvfrom( ready_skt, buffer, buffersize, 0, 
+                        &src_addr, &addrlen ) < 0 ) {
+            perror( "recvfrom()" );
+            exit( EXIT_FAILURE );
+         }
+   
+         ip_header = (struct iphdr*)buffer;
+         tcp_header = (struct tcphdr*)( buffer + sizeof( struct iphdr ) );
+   
+         // Check if it's one of the packets we are expecting.
+         if ( pending_requests.contains( ip_header->saddr ) && 
+              ( tcp_header->syn == 1 ) && 
+              ( tcp_header->ack == 1 ) ) {
+            open_ports_mutex.lock();
+            open_ports[ ip_header->saddr ].insert( tcp_header->source );
+            open_ports_mutex.unlock();
+         }
       }
    }
-
-   close( raw_skt );
+   close( epollfd );
+   for ( int skt : raw_skts ) {
+      close( skt );
+   } 
 }
 
 const struct sockaddr_in get_localhost_addr() {
