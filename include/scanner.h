@@ -2,6 +2,8 @@
 #define scanner_h
 
 #include <netinet/in.h>
+#include <sys/epoll.h>
+#include <fcntl.h>
 
 #include <vector>
 #include <unordered_map>

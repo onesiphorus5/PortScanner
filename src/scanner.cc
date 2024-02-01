@@ -10,6 +10,16 @@ const uint16_t SOCKET_COUNT = 16;
 
 void send_SYN_packets( uint32_t target_addr, uint16_t start_port,
                        uint16_t batchsize ) {
+   int epollfd;
+   const uint16_t MAX_EVENTS = SOCKET_COUNT;
+   struct epoll_event ev, events[ MAX_EVENTS ];
+
+   if ( ( epollfd = epoll_create1( 0 ) ) == -1 ) {
+      perror( "epoll_create1()" );
+      exit( EXIT_FAILURE );
+   }
+   ev.events = EPOLLOUT;
+   
    std::vector<int> raw_skts;
    int on = 1;
    for ( int i=0; i < SOCKET_COUNT; ++i ) {
@@ -18,29 +28,61 @@ void send_SYN_packets( uint32_t target_addr, uint16_t start_port,
          perror( "socket()" );
          exit( EXIT_FAILURE ); 
       }
+      // Set the socket file descriptor to non-blocking
+      int flags = fcntl( skt, F_GETFL, 0 );
+      if ( flags == -1 ) {
+         perror( "fcntl()" );
+         exit( EXIT_FAILURE );
+      }
+      flags |= O_NONBLOCK;
+      if ( fcntl( skt, F_SETFL, flags ) == -1 ) {
+         perror( "fcntl()" );
+         exit( EXIT_FAILURE );
+      }
+
       // Set the IP_HDRINCL option so we can write our own IP header
       setsockopt(skt, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on));
       raw_skts.push_back( skt );
+
+      // Add the skt to the monitored list
+      ev.data.fd = skt;
+      if ( epoll_ctl( epollfd, EPOLL_CTL_ADD, skt, &ev ) == -1 ) {
+         perror( "epoll_ctl()" );
+         exit( EXIT_FAILURE );
+      }
    }
 
    struct sockaddr_in target;
    target.sin_family = AF_INET;
    target.sin_addr.s_addr = target_addr;
 
-   for ( int port = start_port; ( port < start_port + batchsize ) &&
-                                     ( port <= MAX_PORT_COUNT ); ++port ) {
-      target.sin_port = htons( port );
-      
-      IP_packet SYN_packet;  // TODO: implement a clear function
-      SYN_packet.setup_packet( &target );
-
-      int skt = raw_skts[ port % SOCKET_COUNT ];
-      if ( sendto( skt, SYN_packet.buffer(), SYN_packet.size(), 0, 
-                   (const struct sockaddr*)&target, sizeof( struct sockaddr ) ) < 0 ) {
-         perror( "sendto()" );
+   int port = start_port;
+   for (  ; ( port < start_port + batchsize ) && 
+            ( port <= MAX_PORT_COUNT ) ; ) {
+      int fd_count = epoll_wait( epollfd, events, MAX_EVENTS, -1 );
+      if ( fd_count == -1 ) {
+         perror( "epoll_wait()" );
          exit( EXIT_FAILURE );
       }
+      for ( int i=0; i < fd_count; ++i ) {
+         int ready_skt = events[i].data.fd;
+         target.sin_port = htons( port );
+      
+         IP_packet SYN_packet;  // TODO: implement a clear function
+         SYN_packet.setup_packet( &target );
+
+         if ( sendto( ready_skt, SYN_packet.buffer(), SYN_packet.size(), 0, 
+                      (const struct sockaddr*)&target, 
+                      sizeof( struct sockaddr ) ) < 0 ) {
+            perror( "sendto()" );
+            exit( EXIT_FAILURE );
+         }
+
+         port += 1;
+      }
    }
+
+   close( epollfd );
    for ( int skt : raw_skts ) {
       close( skt );
    } 
