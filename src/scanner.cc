@@ -9,7 +9,7 @@ const uint32_t BUFF_SIZE = 128; // Enough to fit both TCP and IP headers
 const uint16_t SOCKET_COUNT = 16; 
 
 void send_SYN_packets( uint32_t target_addr, uint16_t start_port,
-                       uint16_t batchsize ) {
+                       uint16_t batchsize, uint16_t last_port ) {
    int epollfd;
    const uint16_t MAX_EVENTS = SOCKET_COUNT;
    struct epoll_event ev, events[ MAX_EVENTS ];
@@ -58,13 +58,15 @@ void send_SYN_packets( uint32_t target_addr, uint16_t start_port,
 
    int port = start_port;
    for (  ; ( port < start_port + batchsize ) && 
-            ( port <= MAX_PORT_COUNT ) ; ) {
+            ( port <= last_port ) ; ) {
       int fd_count = epoll_wait( epollfd, events, MAX_EVENTS, -1 );
       if ( fd_count == -1 ) {
          perror( "epoll_wait()" );
          exit( EXIT_FAILURE );
       }
-      for ( int i=0; i < fd_count; ++i ) {
+      for ( int i=0; ( i < fd_count ) && 
+                     ( port < start_port + batchsize ) &&
+                     ( port <= last_port ) ; ++i ) {
          int ready_skt = events[i].data.fd;
          target.sin_port = htons( port );
       
@@ -81,6 +83,7 @@ void send_SYN_packets( uint32_t target_addr, uint16_t start_port,
          port += 1;
       }
    }
+   std::cout << "port: " << port << std::endl;
 
    close( epollfd );
    for ( int skt : raw_skts ) {

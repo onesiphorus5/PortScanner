@@ -20,7 +20,7 @@ extern  std::mutex open_ports_mutex;
 /* Defined in main.cc*/
 extern const uint16_t MAX_PORT_COUNT;
 
-void send_SYN_packets( uint32_t, uint16_t, uint16_t );
+void send_SYN_packets( uint32_t, uint16_t, uint16_t, uint16_t );
 const struct sockaddr_in get_localhost_addr();
 void snoop_network( std::stop_token );
 

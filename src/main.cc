@@ -5,8 +5,6 @@
 #include <stop_token>
 #include <chrono>
 
-const uint16_t MAX_PORT_COUNT = (1 << 16 ) - 1;
-
 struct sockaddr_in localhost_addr;
 
 std::unordered_set<uint32_t> pending_requests;
@@ -24,6 +22,9 @@ int main( int argc, const char* argv[] ) {
    CmdLineOptions options = cmdline_parse( argc, argv );
    pending_requests = options.hosts();
 
+   // SYN packets will be sent by multiple threads.
+   // Each thread will send at most 2^12 SYN packets. If there are  
+   // 2^12 (or less) ports to scan, only 1 thread will be used.
    uint16_t batch_size = 1 << 12;
 
    // Set localhost_addr
@@ -38,10 +39,13 @@ int main( int argc, const char* argv[] ) {
 
    // Send SYN packets
    // TODO: send SYN packets in parallel
+   uint16_t first_port = options.port_range().first;
+   uint16_t last_port  = options.port_range().second;
    for ( uint32_t host : options.hosts() ) {
       std::vector<std::jthread> sending_threads;
-      for ( int i=1; i < MAX_PORT_COUNT; i += batch_size ) {
-         sending_threads.emplace_back( send_SYN_packets, host, i, batch_size );
+      for ( int i=first_port; i < last_port; i += batch_size ) {
+         sending_threads.emplace_back( send_SYN_packets, host, i, 
+                                       batch_size, last_port );
       }
 
       for ( auto& th : sending_threads ) {
