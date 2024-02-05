@@ -42,6 +42,7 @@ int main( int argc, const char* argv[] ) {
       std::vector<std::jthread> sending_threads;
       std::vector<std::jthread> recving_threads;
 
+      int sleep_sec = 0;
       for ( int i=first_port; i < last_port; i += BATCH_SIZE ) {
          pthread_mutex_t m;
          pthread_cond_t cv;
@@ -53,12 +54,15 @@ int main( int argc, const char* argv[] ) {
          it_end = --it_end;
          sending_threads.emplace_back( send_SYN_packets, it_end );
          recving_threads.emplace_back( snoop_network, it_end );
+
+         sleep_sec += 5;
       }
 
       for ( auto& th : sending_threads ) {
          th.join();
       }
-      sleep( options.timeout() );
+
+      sleep( sleep_sec );
       for ( auto& th : recving_threads ) {
          th.request_stop();
          th.join();
@@ -73,6 +77,7 @@ int main( int argc, const char* argv[] ) {
          std::cout << " Port: " << ntohs( _port ) << " on host: " 
                    << inet_ntoa( saddr ) << " is OPEN" << std::endl;
       }
+      std::cout << std::endl;
    }
 
    return 0;

@@ -16,11 +16,11 @@ extern const uint16_t MAX_PORT_COUNT;
 
 class CmdLineOptions {
 private:
-   int _timeout = 5;  // default value: 5 seconds
+   int _timeout = 200;  // default value: 200 milliseconds
    // The number of outstanding port scans per thread
    uint16_t _parallel = 8;
    std::unordered_set<uint32_t> _hosts;
-   std::pair<uint16_t, uint16_t> _port_range; // closed range
+   std::pair<uint16_t, uint16_t> _port_range = {1, 1000};
    
 public:
    void timeoutIs( int t ) { _timeout = t; }

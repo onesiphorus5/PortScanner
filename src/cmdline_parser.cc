@@ -10,7 +10,7 @@ CmdLineOptions cmdline_parse( int argc, const char* argv[] ) {
    }
 
    CmdLineOptions options;
-   std::string host;
+   std::string hosts;
    std::string port;
    std::string timeout;
    std::string parallel;
@@ -18,7 +18,7 @@ CmdLineOptions cmdline_parse( int argc, const char* argv[] ) {
    std::vector<std::string_view> args( argv + 1, argv + argc );
    for ( auto arg : args ) {
       if ( arg.starts_with( "--host" ) ) {
-         host = arg.substr( strlen( "--host" ) + 1, arg.size() );
+         hosts = arg.substr( strlen( "--host" ) + 1, arg.size() );
       }
       else if ( arg.starts_with( "--port" ) ) {
          port = arg.substr( strlen( "--port" ) + 1, arg.size() );
@@ -42,11 +42,22 @@ CmdLineOptions cmdline_parse( int argc, const char* argv[] ) {
          exit( EXIT_FAILURE );
       }    
    }
-   // TODO: host needs to be parsed further
-   if ( host == "localhost" ) {
-      host = "127.0.0.1";
+
+   if ( hosts.empty() ) {
+      puts( "expecting --host cmd line argument" );
+      exit( EXIT_FAILURE );
    }
-   options.add_host( inet_addr( host.c_str() ) );
+
+   ssize_t pos = 0;
+   while ( pos < hosts.size() ) {
+      std::string host = hosts.substr( pos, hosts.find( "," ) );
+      pos += host.size() + 1;
+
+      if ( host == "localhost" ) {
+         host = "127.0.0.1";
+      }
+      options.add_host( inet_addr( host.c_str() ) );
+   }
 
    // Parse the port option
    std::pair<uint16_t, uint16_t> port_range;

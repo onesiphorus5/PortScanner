@@ -73,8 +73,8 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          exit( EXIT_FAILURE );
       }
       time( &T );
-      abs_time.tv_sec = T;
-      abs_time.tv_nsec = args->timeout * 1000000; // nanoseconds
+      abs_time.tv_sec = T + args->timeout/1000;
+      abs_time.tv_nsec = ( args->timeout % 1000 ) * 1000000; // nanoseconds
       while ( args->requests_list_isEmpty == false ) {
          int ret = pthread_cond_timedwait( &args->requests_cv, 
                                        &args->requests_cv_mutex, &abs_time );
@@ -86,6 +86,12 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
             exit( EXIT_FAILURE );
          }
       }
+      // We can update this flag early since the corresponding receiver thread
+      // does not depend on the value of this flag. We only use this flag to 
+      // wait for the corresponding receiver thread to notify this sender 
+      // thread that it nolonger needs to wait (when the request list is empty)
+      args->requests_list_isEmpty = false;
+
       if ( pthread_mutex_unlock( &args->requests_cv_mutex ) != 0 ) {
          perror( "pthread_mutex_unlock()" );
          exit( EXIT_FAILURE );
@@ -165,15 +171,6 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          args->requests_list.push_back( node );
          auto it_end = args->requests_list.end();
          args->requests_map[ port ] = --it_end;
-         
-         // TODO: maybe move this out of this loop
-         if ( pthread_mutex_lock( &args->requests_cv_mutex ) != 0 ) {
-            perror( "pthread_mutex_lock()" ); 
-         }
-         args->requests_list_isEmpty = false;
-         if ( pthread_mutex_unlock( &args->requests_cv_mutex ) != 0 ) {
-            perror( "pthread_mutex_unlock()" ); 
-         }
 
          IP_packet SYN_packet;  // TODO: implement a clear function
          SYN_packet.setup_packet( &target );
@@ -193,14 +190,13 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          exit( EXIT_FAILURE );
       }
    }
-   std::cout << "port: " << port << std::endl;
 
    close( epollfd );
    for ( int skt : raw_skts ) {
       close( skt );
    } 
 }
-      
+
 void snoop_network( std::stop_token stopToken, 
                     std::list<thread_arguments>::iterator args ) {
    int epollfd;
@@ -255,6 +251,26 @@ void snoop_network( std::stop_token stopToken,
    struct iphdr* ip_header;
    struct tcphdr* tcp_header;
    while ( !stopToken.stop_requested() ) {
+      // (1)
+      // If the request list is empty wake up the corresponding sender thread
+      if ( args->requests_list.empty() ) {
+         if ( pthread_mutex_lock( &args->requests_cv_mutex ) != 0 ) {
+            perror( "pthread_mutex_lock()" );
+            exit( EXIT_FAILURE );
+         }
+         args->requests_list_isEmpty = true;
+         if ( pthread_cond_signal( &args->requests_cv ) != 0 ) {
+            perror( "pthread_cond_signal()" );
+            exit( EXIT_FAILURE );
+         }
+         if ( pthread_mutex_unlock( &args->requests_cv_mutex ) != 0 ) {
+            perror( "pthread_mutex_unlock()" );
+            exit( EXIT_FAILURE );
+         }
+      }
+
+      // (2)
+      // Receive packets
       int fd_count = epoll_wait( epollfd, events, MAX_EVENTS, -1 );
       if ( fd_count == -1 ) {
          perror( "epoll_wait()" );
@@ -266,19 +282,6 @@ void snoop_network( std::stop_token stopToken,
          exit( EXIT_FAILURE );
       }
       for ( int i=0; i < fd_count; ++i ) {
-         if ( args->requests_list.empty() ) {
-            if ( pthread_mutex_lock( &args->requests_cv_mutex ) != 0 ) {
-               perror( "pthread_mutex_lock()" );
-               exit( EXIT_FAILURE );
-            }
-            args->requests_list_isEmpty = true;
-            pthread_cond_signal( &args->requests_cv );
-            pthread_mutex_unlock( &args->requests_cv_mutex );
-            
-            pthread_mutex_unlock( &args->requests_mutex );
-            break;
-         }
-
          int ready_skt = events[i].data.fd;
 
          memset( buffer, 0, buffersize );
@@ -287,7 +290,11 @@ void snoop_network( std::stop_token stopToken,
             perror( "recvfrom()" );
             exit( EXIT_FAILURE );
          }
-   
+
+         if ( args->requests_list.empty() ) {
+            continue;
+         }
+
          ip_header = (struct iphdr*)buffer;
          tcp_header = (struct tcphdr*)( buffer + sizeof( struct iphdr ) );
    
