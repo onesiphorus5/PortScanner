@@ -22,7 +22,8 @@ struct thread_arguments {
                      pthread_mutex_t m, pthread_cond_t c, pthread_mutex_t c_m ) :
       target_addr{ addr }, start_port{ s_port }, last_port{ l_port },
       parallel{_parallel}, timeout{_timeout},
-      requests_mutex{m}, requests_cv{c}, requests_cv_mutex{c_m} {
+      requests_mutex{m}, requests_list_isEmpty{true}, 
+      requests_cv{c}, requests_cv_mutex{c_m} {
          pthread_mutex_init( &requests_mutex, NULL );
          pthread_cond_init( &requests_cv, NULL );
          pthread_mutex_init( &requests_cv_mutex, NULL );
@@ -36,6 +37,8 @@ struct thread_arguments {
    map_type requests_map;
    std::list< std::pair<uint16_t, int> > requests_list;
    pthread_mutex_t requests_mutex;
+
+   bool requests_list_isEmpty;
    pthread_cond_t requests_cv;
    pthread_mutex_t requests_cv_mutex;
 };

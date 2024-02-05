@@ -7,6 +7,7 @@
 
 const uint32_t BUFF_SIZE = 128; // Enough to fit both TCP and IP headers
 
+
 void send_SYN_packets( std::list<thread_arguments>::iterator args) {
    // thread_arguments& args->= thread_args_vec[index];
 
@@ -56,19 +57,47 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
    target.sin_family = AF_INET;
    target.sin_addr.s_addr = args->target_addr;
 
+   time_t T;
+   struct timespec abs_time;
+
    int port = args->start_port;
    for (  ; ( port < args->start_port + BATCH_SIZE ) && 
             ( port <= args->last_port ) ; ) {
+      // (1)
       // Wait for either of the following conditions to be true:
       // 1. pending_requests_list to be empty, that is receive replies for 
       //    the requests made
       // 2. the timeout to expire
+      if ( pthread_mutex_lock( &args->requests_cv_mutex ) != 0 ) {
+         perror( "pthread_mutex_lock()" );
+         exit( EXIT_FAILURE );
+      }
+      time( &T );
+      abs_time.tv_sec = T;
+      abs_time.tv_nsec = args->timeout * 1000000; // nanoseconds
+      while ( args->requests_list_isEmpty == false ) {
+         int ret = pthread_cond_timedwait( &args->requests_cv, 
+                                       &args->requests_cv_mutex, &abs_time );
+         if ( ret == ETIMEDOUT ) {
+            break;
+         }
+         else {
+            perror( "pthread_cond_timedwait()" );
+            exit( EXIT_FAILURE );
+         }
+      }
+      if ( pthread_mutex_unlock( &args->requests_cv_mutex ) != 0 ) {
+         perror( "pthread_mutex_unlock()" );
+         exit( EXIT_FAILURE );
+      }
+
       if ( pthread_mutex_lock( &args->requests_mutex ) != 0 ) {
          perror( "pthread_mutex_lock()" );
          exit( EXIT_FAILURE );
       }
-      // args->requests_cv.wait_for( lk, std::chrono::milliseconds( args->timeout ), 
-      //                            [&]{ return args->requests_list.empty(); } );
+
+      // (2)
+      // Delete packets that have been sent 2 times
       auto it = args->requests_list.begin();
       while ( it != args->requests_list.end() ) {
          if ( it->second == 2 ) {
@@ -83,6 +112,8 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          exit( EXIT_FAILURE );
       }
 
+      // (3)
+      // Resend some packets
       int fd_count = epoll_wait( epollfd, events, MAX_EVENTS, -1 );
       if ( fd_count == -1 ) {
          perror( "epoll_wait()" );
@@ -95,7 +126,6 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
       }
       it = args->requests_list.begin();
       int i = 0;
-      // Resend SYN packets
       for ( ; i < fd_count; ++i ) {
          if ( it == args->requests_list.end() ) {
             break;
@@ -103,7 +133,6 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          // Increment the "send count"
          (*it).second += 1;
 
-         // Resend the packets
          int ready_skt = events[i].data.fd;
          target.sin_port = htons( (*it).first );
 
@@ -120,6 +149,7 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          ++it;      
       }
 
+      // (4)
       // Send new packets
       for ( ; ( i < fd_count ) && 
               ( port < args->start_port + BATCH_SIZE ) &&
@@ -135,6 +165,15 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
          args->requests_list.push_back( node );
          auto it_end = args->requests_list.end();
          args->requests_map[ port ] = --it_end;
+         
+         // TODO: maybe move this out of this loop
+         if ( pthread_mutex_lock( &args->requests_cv_mutex ) != 0 ) {
+            perror( "pthread_mutex_lock()" ); 
+         }
+         args->requests_list_isEmpty = false;
+         if ( pthread_mutex_unlock( &args->requests_cv_mutex ) != 0 ) {
+            perror( "pthread_mutex_unlock()" ); 
+         }
 
          IP_packet SYN_packet;  // TODO: implement a clear function
          SYN_packet.setup_packet( &target );
@@ -165,7 +204,7 @@ void send_SYN_packets( std::list<thread_arguments>::iterator args) {
 void snoop_network( std::stop_token stopToken, 
                     std::list<thread_arguments>::iterator args ) {
    int epollfd;
-   const uint16_t MAX_EVENTS = 16; // TODO: change this
+   const uint16_t MAX_EVENTS = args->parallel;
    struct epoll_event ev, events[ MAX_EVENTS ];
 
    if ( ( epollfd = epoll_create1( 0 ) ) == -1 ) {
@@ -227,10 +266,17 @@ void snoop_network( std::stop_token stopToken,
          exit( EXIT_FAILURE );
       }
       for ( int i=0; i < fd_count; ++i ) {
-         // TODO: refine this part
          if ( args->requests_list.empty() ) {
-            // args->requests_cv.notify_one();
-            // break;
+            if ( pthread_mutex_lock( &args->requests_cv_mutex ) != 0 ) {
+               perror( "pthread_mutex_lock()" );
+               exit( EXIT_FAILURE );
+            }
+            args->requests_list_isEmpty = true;
+            pthread_cond_signal( &args->requests_cv );
+            pthread_mutex_unlock( &args->requests_cv_mutex );
+            
+            pthread_mutex_unlock( &args->requests_mutex );
+            break;
          }
 
          int ready_skt = events[i].data.fd;
